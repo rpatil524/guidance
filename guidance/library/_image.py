@@ -1,34 +1,33 @@
-import guidance
-import urllib
+import pathlib
 import typing
-import http
+import pkg_resources
+import base64
 import re
 
+from .._guidance import guidance
+from .._utils import bytes_from
+from .._ast import ImageBlob, ImageUrl
+from ..trace._trace import ImageOutput
+
+
 @guidance
-def image(lm, src, allow_local=True):
-
-    # load the image bytes
-    # ...from a url
-    if isinstance(src, str) and re.match(r'$[^:/]+://', src):
-        with urllib.request.urlopen(src) as response:
-            response = typing.cast(http.client.HTTPResponse, response)
-            bytes_data = response.read()
-    
-    # ...from a local path
-    elif allow_local and isinstance(src, str):
-        with open(src, "rb") as f:
-            bytes_data = f.read()
-
-    # ...from image file bytes
-    elif isinstance(src, bytes):
-        bytes_data = src
-        
+def image(lm, src: typing.Union[str, pathlib.Path, bytes], allow_local: bool = True):
+    if isinstance(src, str) and re.match(r"^(?!file://)[^:/]+://", src):
+        lm += ImageUrl(url=src)
     else:
-        raise Exception(f"Unable to load image bytes from {src}!")
+        bytes_data = bytes_from(src, allow_local=allow_local)
+        base64_string = base64.b64encode(bytes_data).decode('utf-8')
+        lm += ImageBlob(data=base64_string)
+    return lm
 
-    bytes_id = str(id(bytes_data))
 
-    # set the image bytes
-    lm = lm.set(bytes_id, bytes_data)
-    lm += f'<|_image:{bytes_id}|>'
+@guidance
+def gen_image(lm):
+    # TODO(nopdive): Mock for testing. Remove all of this code later.
+    with open(
+            pkg_resources.resource_filename("guidance", "resources/sample_image.png"), "rb"
+    ) as f:
+        bytes_data = f.read()
+        base64_string = base64.b64encode(bytes_data).decode('utf-8')
+        lm += ImageOutput(value=base64_string, is_input=False)
     return lm
